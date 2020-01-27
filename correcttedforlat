@@ -1,0 +1,226 @@
+//Coastal Annual Land Cover Change (CALCC) script
+//README Information is at the bottom of the code.
+
+//Landsat 5
+//Load in data collection from specific satellite, i.e. Landsat 5 surface reflectance in this example
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+var l5 = ee.ImageCollection('LANDSAT/LT05/C01/T1_SR')
+                  .map(cloudMaskL457);
+
+//Convert geometry from the standard file (study area, point, hampton)
+var point = /* color: #00ffff */ee.Geometry.Point([-161.909920, 59.749510]),
+    studyarea = /* color: #d69a40 */ee.Geometry.Polygon(
+        [[[-162.2237, 59.2187],
+          [-159.7978, 59.3493],
+          [-159.9807, 60.3759],
+          [-162.4817, 60.2413]]]),
+    geometry = /* color: #0b4a8b */ee.Geometry.MultiPoint();
+
+
+//Filter out the data to create a composite collection
+//var l8DatePlace= l8.filterDate('2015-01-01','2015-12-31').filterBounds(studyarea);
+var l5DatePlace= l5.filterBounds(studyarea).filterDate('1988-01-01', '2013-01-01');
+// print ('l5DatePlace', l5DatePlace);
+
+//Down-select Bands
+l5.select('old bands', 'new band names');
+var l5_B2_B5 = l5DatePlace.select(['B2','B3','B4','B5']);
+//print ('l5_B2_B5', l5_B2_B5);
+
+//Rename bands
+var l5Renamed = l5_B2_B5.select(
+    ['B2', 'B3', 'B4', 'B5'], // old names
+    ['green', 'red', 'NIR', 'MIR']); // new names
+print ('l5Renamed', l5Renamed);
+//------------------------------------------------------------------------------------------------------
+
+//Landsat 7
+
+//Load in data collection from specific satellite, i.e. Landsat 7 surface reflectance in this example
+var cloudMaskL457 = function(image) {
+  var qa = image.select('pixel_qa');
+  // If the cloud bit (5) is set and the cloud confidence (7) is high
+  // or the cloud shadow bit is set (3), then it's a bad pixel.
+  var cloud = qa.bitwiseAnd(1 << 5)
+                  .and(qa.bitwiseAnd(1 << 7))
+                  .or(qa.bitwiseAnd(1 << 3));
+  // Remove edge pixels that don't occur in all bands
+  var mask2 = image.mask().reduce(ee.Reducer.min());
+  return image.updateMask(cloud.not()).updateMask(mask2);
+};
+
+var l7 = ee.ImageCollection('LANDSAT/LE07/C01/T1_SR')
+                  .map(cloudMaskL457);
+
+//Filter out the data to create a composite collection
+//var l8DatePlace= l8.filterDate('2015-01-01','2015-12-31').filterBounds(studyarea);
+var l7DatePlace= l7.filterBounds(studyarea).filterDate('1988-01-01', '2018-10-01');
+// print ('l7DatePlace', l7DatePlace);
+
+//Down-select Bands
+l7.select('old bands', 'new band names');
+var l7_B2_B5 = l7DatePlace.select(['B2','B3','B4','B5']);
+// print ('l7_B2_B5', l7_B2_B5);
+
+//Rename bands
+var l7Renamed = l7_B2_B5.select(
+    ['B2', 'B3', 'B4', 'B5'], // old names
+    ['green', 'red', 'NIR', 'MIR']); // new names
+print ('l7Renamed', l7Renamed);
+
+//--------------------------------------------------------------------------------------------------------
+
+//Landsat 8
+
+//Load in data collection from specific satellite, i.e. Landsat 8 surface reflectance in this example
+function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                 .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+
+var dataset = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+                  .map(maskL8sr);
+
+var l8 = dataset;
+
+
+//Filter out the data to create a composite collection
+//var l8DatePlace= l8.filterDate('2015-01-01','2015-12-31').filterBounds(studyarea);
+var l8DatePlace= l8.filterBounds(studyarea).filterDate('2013-01-01', '2018-10-01');
+// print ('l8DatePlace', l8DatePlace);
+
+//Down-select Bands
+l8.select('old bands', 'new band names');
+var l8_B3_B6 = l8DatePlace.select(['B3','B4','B5','B6']);
+//print ('l8_B3_B6', l8_B3_B6);
+
+//Rename bands
+var l8Renamed = l8_B3_B6.select(
+    ['B3', 'B4', 'B5', 'B6'], // old names
+    ['green', 'red', 'NIR', 'MIR']); // new names
+print ('l8Renamed', l8Renamed);
+
+//----------------------------------------------------------------------------------------------------------------
+
+//Merging all final satellite collections
+
+// merge Landsat 5, Landsat 7, and Landsat 8 collections to form a single mega-collection
+var mergedCollection = l8Renamed.merge(l7Renamed).merge(l5Renamed);
+print ('mergedCollection', mergedCollection);
+
+//-------------------------------------------------------------------------------------------------------------------
+
+//Create a threshold to apply to NDWI in order to create rasters which contain ones and zeroes
+
+//NDWI functions for all satellites
+var mergedAllFunction = function(image) {
+  var ndwi = image.normalizedDifference(['green', 'NIR']).rename('NDWI');
+
+// THRESHOLD
+// if NDWI less or equal to 0 => 0 else 1
+var thres = ndwi.gte(0).rename('thres');
+  return image.addBands(thres);
+};
+
+// find all data and filter them by date and add NDWI
+var mergedCollectionNDWI = mergedCollection
+    .filterDate('1960-01-01', '2019-11-01')
+    .filterBounds(studyarea)  // filter to area-of-interest; 
+    .map(mergedAllFunction);
+
+// Down select Green, Red, NIR, MIR - only Thres remains
+mergedCollectionNDWI.select('old bands', 'new band names');
+var mergedCollectionNDWI = mergedCollectionNDWI.select(['thres']);
+print ('mergedCollectionNDWI', mergedCollectionNDWI);
+
+//-------------------------------------------------------------------------------------------------------------------
+
+//Create a threshold to apply to MNDWI in order to create rasters which contain ones and zeroes
+
+//MNDWI functions for all satellites
+var mergedAllFunction = function(image) {
+  var mndwi = image.normalizedDifference(['green', 'MIR']).rename('MNDWI');
+
+// THRESHOLD
+// if MNDWI less or equal to 0 => 0 else 1
+var thres = mndwi.gte(0).rename('thres');
+  return image.addBands(thres);
+};
+
+// find all data and filter them by date and add MNDWI
+var mergedCollectionMNDWI = mergedCollection
+    .filterDate('1960-01-01', '2019-11-01')
+    .filterBounds(studyarea)  // filter to area-of-interest; 
+    .map(mergedAllFunction);
+
+// Down select Green, Red, NIR, MIR - only Thres remains
+mergedCollectionMNDWI.select('old bands', 'new band names');
+var mergedCollectionMNDWI = mergedCollectionMNDWI.select(['thres']);
+print ('mergedCollectionMNDWI', mergedCollectionMNDWI);
+
+//---------------------------------------------------------------------------------------------------------------
+//merge NDWI, and MNDWI collections
+var mergedIndices = mergedCollectionNDWI.merge(mergedCollectionMNDWI);
+print ('mergedIndices', mergedIndices);
+
+//-------------------------------------------------------------------------------------------------------------------------
+
+//Parse the total collection into years
+
+var collections = {};
+for (var year = 1960; year <= 2019; year++) 
+  collections[year] = mergedIndices.filterDate(year.toString() + '-01-01', year.toString() + '-12-31').filterBounds(studyarea);
+print ('collections', collections);
+
+//---------------------------------------------------------------------------------------------------------------------
+
+// Take the mean of all indices values for each raster collection.  This will result in a single raster for each collection
+
+var collectionsMeans = {};
+for (var year = 1960; year <= 2019; year++)
+  collectionsMeans[year] = collections[year].reduce(ee.Reducer.mean());
+  print('collectionsMeans', collectionsMeans);
+
+//--------------------------------------------------------------------------------------------------------------------
+
+// Create a threshold to mitigate visual artifacts due to satellite degradation
+
+var collectionsThres = {};
+for (var year = 1988; year <= 2018; year++)
+collectionsThres[year] = collectionsMeans[year].where(collectionsMeans[year].lt(0.12), 0).where(collectionsMeans[year].gt(0.88), 1);
+  print('collectionsThres', collectionsThres);
+
+// --------------------------------------------------------------------------------------------------------------
+
+// Export as GeoTIFF.
+for (var year = 1988; year <= 2018; year++)
+  Export.image.toDrive({
+    image: collectionsThres[year],
+    description: 'Thresholded12_88_' + year.toString(),
+    scale: 30,
+    region: studyarea,
+    fileFormat: 'GeoTIFF',
+    formatOptions: {
+      cloudOptimized: true
+    }
+  });
+  print
+  
